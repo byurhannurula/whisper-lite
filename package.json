@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@11.5.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
