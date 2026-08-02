@@ -27,7 +27,14 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 struct App {
     /// Serialises start/stop; see the SAFETY note on `audio::Recorder`.
     recorder: Mutex<audio::Recorder>,
-    engine: Mutex<engine::Engine>,
+    /// The loaded model, or `None` when there is not one yet.
+    ///
+    /// Optional because a fresh install has no model on disk — nothing is bundled — and the app
+    /// has to start anyway, or there is no way to reach the UI that downloads one.
+    engine: Mutex<Option<engine::Engine>>,
+    /// Serialises model loads, so the startup warm-up and a first dictation cannot both pay the
+    /// cost or interleave their writes to `engine`.
+    engine_load: Mutex<()>,
     settings: Mutex<Settings>,
     /// The shortcut currently registered, so it can be unregistered before rebinding.
     /// Rebinding without this leaves the old binding live and, on some macOS versions,
@@ -52,7 +59,13 @@ struct App {
 impl App {
     /// Resting label for the tray, which doubles as the shortcut reminder.
     fn idle_status(&self) -> String {
-        format!("Ready — hold {}", self.settings.lock().unwrap().shortcut)
+        let cfg = self.settings.lock().unwrap();
+        // On a fresh install "Ready — hold ⌃⇧Space" would be a lie: pressing it cannot work
+        // until something has been downloaded.
+        if !models::is_installed(&cfg.model) {
+            return "No model — open Settings".to_string();
+        }
+        format!("Ready — hold {}", cfg.shortcut)
     }
 
     fn set_status(&self, text: &str) {
@@ -146,6 +159,22 @@ pub fn run() {
             hud::set_state(&handle, "idle", None);
 
             rebind(&handle, &shortcut);
+
+            // Warm the model in the background: the app is already usable, and this way the
+            // first dictation is not the one that waits for the load. Failing here is normal and
+            // not fatal — "no model downloaded yet" is exactly the state a fresh install is in,
+            // and `begin` sends the user to the Models section when they try to dictate.
+            {
+                let handle = handle.clone();
+                std::thread::spawn(move || {
+                    match ensure_engine(&handle) {
+                        Ok(()) => println!("[whisper-lite] model ready"),
+                        Err(e) => eprintln!("[whisper-lite] no model ready: {e}"),
+                    }
+                    let state = handle.state::<App>();
+                    state.set_status(&state.idle_status());
+                });
+            }
 
             // Debug aid: WHISPER_LITE_HUD_TEST=1 shows the indicator shortly after launch so it
             // can be verified without a microphone or a menu click.
@@ -273,28 +302,66 @@ fn suppress_ggml_teardown() {
     }
 }
 
+/// Arms `suppress_ggml_teardown` exactly once, after a model has actually loaded.
+///
+/// `atexit` handlers run in reverse registration order, so ours has to be installed *after* ggml
+/// has created its Metal device in order to run *before* ggml's own teardown. That used to be
+/// guaranteed by loading the model during startup; now that loading is lazy, the first successful
+/// load is what arms it. An app that never loads a model never creates a Metal context, so there
+/// is nothing to suppress.
+static ARM_TEARDOWN: std::sync::Once = std::sync::Once::new();
+
+/// Loads `id` into the engine slot, replacing whatever is there.
+///
+/// Blocking: ~190ms once the machine has compiled Metal shaders, several seconds the very first
+/// time. Never call this on the main thread.
+fn load_model(state: &App, id: &str) -> Result<(), String> {
+    let path = engine::model_path(id);
+    println!("[whisper-lite] loading '{id}' from {}", path.display());
+
+    let started = Instant::now();
+    let loaded = engine::Engine::load(id, &path).map_err(|e| format!("{e:#}"))?;
+    println!("[whisper-lite] loaded '{id}' in {:?}", started.elapsed());
+
+    ARM_TEARDOWN.call_once(suppress_ggml_teardown);
+    *state.engine.lock().unwrap() = Some(loaded);
+    Ok(())
+}
+
+/// Makes sure the configured model is loaded, loading it if not.
+///
+/// Blocking, for the same reason as `load_model`.
+fn ensure_engine(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<App>();
+    let _guard = state.engine_load.lock().unwrap();
+
+    let wanted = state.settings.lock().unwrap().model.clone();
+    if state
+        .engine
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|e| e.model_id() == wanted)
+    {
+        return Ok(());
+    }
+
+    load_model(state.inner(), &wanted)
+}
+
 fn init() -> Result<App> {
     redirect_logs();
     let settings = Settings::load();
 
-    let model_id = settings.model.clone();
-    let model_path = engine::model_path(&model_id);
-    println!(
-        "[whisper-lite] loading model '{model_id}' from {}",
-        model_path.display()
-    );
-    let started = Instant::now();
-    let engine = engine::Engine::load(&model_id, &model_path)?;
-    println!("[whisper-lite] model loaded in {:?}", started.elapsed());
-
-    // Registered after the model, so it runs before ggml's own teardown.
-    suppress_ggml_teardown();
-
+    // The model is deliberately *not* loaded here. Startup must succeed on a machine that has
+    // never downloaded one, because the Models UI is the only way to get one and it lives inside
+    // the app. `ensure_engine` loads it on a background thread once the app is up.
     let recorder = audio::Recorder::open(&settings.input_device)?;
 
     Ok(App {
         recorder: Mutex::new(recorder),
-        engine: Mutex::new(engine),
+        engine: Mutex::new(None),
+        engine_load: Mutex::new(()),
         settings: Mutex::new(settings),
         bound: Mutex::new(None),
         #[cfg(target_os = "macos")]
@@ -941,19 +1008,21 @@ fn delete_model(app: AppHandle, id: String) -> Result<(), String> {
 fn set_active_model(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<App>();
 
-    if state.engine.lock().unwrap().model_id() == id {
-        return Ok(());
+    {
+        let _guard = state.engine_load.lock().unwrap();
+        let already = state
+            .engine
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|e| e.model_id() == id);
+
+        // Load before persisting. A failure then leaves the app still working with whatever it
+        // had, rather than pointing the settings at a model that would not load next start.
+        if !already {
+            load_model(state.inner(), &id)?;
+        }
     }
-
-    let path = engine::model_path(&id);
-    let started = Instant::now();
-    let engine = engine::Engine::load(&id, &path).map_err(|e| format!("{e:#}"))?;
-    println!(
-        "[whisper-lite] switched to '{id}' in {:?}",
-        started.elapsed()
-    );
-
-    *state.engine.lock().unwrap() = engine;
 
     let mut settings = state.settings.lock().unwrap().clone();
     settings.model = id;
@@ -1111,6 +1180,19 @@ fn begin(app: &AppHandle) {
         return;
     }
 
+    // Refuse before recording rather than after. Letting someone talk for ten seconds and only
+    // then saying there is no model wastes their time and loses what they said — and on a fresh
+    // install this is the very first thing they will try.
+    let model = state.settings.lock().unwrap().model.clone();
+    if !models::is_installed(&model) {
+        println!("[whisper-lite] no model installed — sending the user to Settings");
+        state.set_status("No model — open Settings");
+        hud_state(app, "error", Some("No model — opening Settings".into()));
+        clear_hud_after(app, 2600);
+        open_settings_window(app);
+        return;
+    }
+
     if let Err(e) = state.recorder.lock().unwrap().start() {
         eprintln!("[whisper-lite] could not start capture: {e:#}");
         state.set_status("Microphone error");
@@ -1226,12 +1308,19 @@ fn finish(app: &AppHandle) {
     std::thread::spawn(move || {
         let state = handle.state::<App>();
 
-        let result =
-            state
-                .engine
-                .lock()
-                .unwrap()
-                .transcribe(&samples, &language, accurate, &dictionary);
+        // The model may still be warming up, or may have been downloaded after startup. This is
+        // the last point at which loading it is still cheaper than losing the recording.
+        let result = match ensure_engine(&handle) {
+            Err(e) => Err(anyhow::anyhow!("{e}")),
+            Ok(()) => {
+                let guard = state.engine.lock().unwrap();
+                match guard.as_ref() {
+                    // `ensure_engine` just succeeded, so this is unreachable in practice.
+                    None => Err(anyhow::anyhow!("no model loaded")),
+                    Some(eng) => eng.transcribe(&samples, &language, accurate, &dictionary),
+                }
+            }
+        };
         state.busy.store(false, Ordering::SeqCst);
 
         let outcome = match result {

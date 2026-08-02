@@ -688,6 +688,7 @@ function sizeLabel(mb: number): string {
 }
 
 let modelFilter: "all" | "installed" = "all";
+let firstModelRender = true;
 
 /**
  * A five-segment bar for one axis of a model's trade-off.
@@ -881,6 +882,15 @@ async function renderModels() {
     : "No model is loaded yet. Download one to start dictating.";
 
   const installed = models.filter((m) => m.installed);
+
+  // A fresh install has no model, and nothing in the app works until it does. Open on the section
+  // that fixes that rather than on a dashboard of dashes. Only on the first render, so choosing
+  // to delete every model later does not yank the user out of whatever they were doing.
+  if (firstModelRender) {
+    firstModelRender = false;
+    if (installed.length === 0) goTo("tab-models");
+  }
+
   const onDisk = installed.reduce((total, m) => total + m.sizeMb, 0);
   $("#model-summary").textContent = installed.length
     ? `${installed.length} downloaded · ${sizeLabel(onDisk)} on disk`
