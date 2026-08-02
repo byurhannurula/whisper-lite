@@ -1,0 +1,55 @@
+name: CI
+
+# Fast gates on every push and PR.
+#
+# One job, on macOS. The frontend build would be cheaper on ubuntu (1x billing against macOS's
+# 10x), but the Rust half has to run on macOS regardless — the crate pulls in cpal/CoreAudio and
+# whisper-rs with Metal, neither of which builds on Linux without a pile of shims. Two jobs would
+# mean two checkouts and two dependency installs to save a few seconds of a job that is already
+# running, so it is one.
+#
+# The expensive part, `tauri build`, only happens at release time.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+# On rapid pushes to the same branch or PR, cancel the superseded run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      # `pnpm build` is `tsc --noEmit && vite build`, so this is the typecheck too.
+      - name: Frontend
+        run: |
+          pnpm format:check
+          pnpm lint
+          pnpm build
+
+      # `--lib` keeps this to the text and settings tests: pure logic, no Tauri, no model.
+      - name: Rust
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --check
+          cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
+          cargo test --manifest-path src-tauri/Cargo.toml --lib

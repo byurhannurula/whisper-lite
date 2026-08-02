@@ -1,0 +1,4 @@
+# sherpa-onnx ships libonnxruntime next to the binary but emits no LC_RPATH pointing at it.
+# Same fix as m0-bench: resolve dylibs relative to the executable.
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,@executable_path"]

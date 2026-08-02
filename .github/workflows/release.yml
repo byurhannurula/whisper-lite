@@ -1,0 +1,102 @@
+name: Release
+
+# Push a version tag to build the macOS DMG and attach it to a draft GitHub Release:
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# macOS only, deliberately. jotter's equivalent fans out across macOS, Ubuntu and Windows;
+# whisper-lite cannot yet, because text injection, the single-key hotkey tap (CGEventTap) and
+# the Metal backend are all macOS-only. Adding the other two platforms to this matrix would
+# produce binaries that build and then do nothing. See PRD §10 (M5).
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history, so the release notes can diff against the previous tag.
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Universal binary: Apple Silicon and Intel in one bundle.
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # A tagged release is the last gate before anyone downloads this, so run everything.
+      # `pnpm release` runs the same set locally before it ever creates the tag; this is the
+      # backstop for a tag pushed by hand.
+      - name: Test
+        run: |
+          pnpm format:check
+          pnpm lint
+          pnpm build
+          cargo fmt --manifest-path src-tauri/Cargo.toml --check
+          cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
+          cargo test --manifest-path src-tauri/Cargo.toml --lib
+
+      - name: Assemble release notes
+        id: notes
+        shell: bash
+        run: |
+          prev="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [ -n "$prev" ]; then range="$prev..${GITHUB_REF_NAME}"; else range=""; fi
+          {
+            echo "### What's changed"
+            echo
+            git log --no-merges --pretty=format:'- %s (%h)' $range
+            echo
+            echo
+            echo '---'
+            echo '**No model ships with the app.** Open Settings → Models and download one — Base (141 MB) is a good start.'
+            echo
+            echo 'This build is **not code-signed or notarized** (no paid Apple Developer account). Gatekeeper will block the first launch:'
+            echo '- **System Settings → Privacy & Security → Open Anyway**, or'
+            echo '- `xattr -dr com.apple.quarantine /Applications/Whisper\ Lite.app`'
+            echo
+            echo 'Or install with Homebrew, which is the smoother path:'
+            echo '```sh'
+            echo 'brew install --cask byurhannurula/tap/whisper-lite'
+            echo '```'
+          } > notes.md
+          {
+            echo "body<<RELEASE_EOF"
+            cat notes.md
+            echo "RELEASE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Auto-update signing. Empty until the secrets exist, which is harmless while
+          # bundle.createUpdaterArtifacts is off. To enable in-app updates: run
+          # `pnpm tauri signer generate`, put the public key in tauri.conf.json under
+          # plugins.updater.pubkey, add these two secrets, and turn the bundle flag on.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Whisper Lite ${{ github.ref_name }}"
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: true
+          prerelease: false
+          args: --target universal-apple-darwin

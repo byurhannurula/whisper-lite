@@ -1,0 +1,10 @@
+[package]
+name = "m0-sherpa"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+hound = "3.5.1"
+libc = "0.2.189"
+sherpa-rs = "0.6.8"

@@ -1,0 +1,18 @@
+<!--
+  Source for tray.png (44x44, i.e. 22pt at 2x).
+
+  A macOS template image: shape comes from the alpha channel and macOS recolours it for light and
+  dark menu bars, so this is pure black on transparent with no background plate. Handing the menu
+  bar the full-colour app icon produced a solid white square.
+
+  Same five-bar waveform as the app icon, thinned for menu-bar scale.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" width="44" height="44">
+  <g fill="#000">
+    <rect x="5" y="16" width="4" height="12" rx="2" />
+    <rect x="12.5" y="11" width="4" height="22" rx="2" />
+    <rect x="20" y="6" width="4" height="32" rx="2" />
+    <rect x="27.5" y="10" width="4" height="24" rx="2" />
+    <rect x="35" y="14" width="4" height="16" rx="2" />
+  </g>
+</svg>

@@ -1,0 +1,6 @@
+allowBuilds:
+  # esbuild's postinstall fetches its platform-native binary; Vite will not build without it.
+  esbuild: true
+# Supply-chain cooldown: refuse package versions published in the last 48h. Catches most
+# worm-style attacks before they can reach this machine.
+minimumReleaseAge: 2880

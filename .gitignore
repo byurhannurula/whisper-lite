@@ -1,0 +1,41 @@
+# Rust
+**/target/
+
+# Node
+**/node_modules/
+**/dist/
+
+# Model weights — hundreds of megabytes each, downloaded at runtime and never committed.
+# This is the anti-bloat charter applied to the repo itself (PRD §1).
+models/
+*.bin
+*.onnx
+*.onnx.data
+*.partial
+
+# M0 spike artefacts. Patterns are unanchored, so they keep matching after the move to research/.
+**/m0-bench/audio/
+**/m0-bench/cache/
+**/m0-bench/M0-RESULTS.md
+**/m0-tcc/build/
+
+# Local UI captures from Playwright. Useful while iterating on the settings window, never worth
+# committing — the icons and anything referenced by the README are allowed back in below.
+*.png
+!public/*.png
+!src-tauri/icons/**/*.png
+!docs/images/*.png
+.playwright-mcp/
+screenshots/
+
+# `tauri icon` emits Android and iOS icon sets from the same source. This is a desktop app, so
+# they are 35 files of noise — regenerate them if a mobile target ever appears.
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
+# Private working notes. Kept out of the repo deliberately — nothing in the codebase or the
+# public docs refers to it, so its absence breaks nothing.
+docs/PRD.md
+
+# macOS
+.DS_Store

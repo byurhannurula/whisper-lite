@@ -1,0 +1,17 @@
+dist
+node_modules
+src-tauri/target
+src-tauri/gen
+pnpm-lock.yaml
+LICENSE
+.claude/settings.local.json
+
+# Rust is formatted by rustfmt, not Prettier.
+*.rs
+
+# Hand-laid-out markup. Prettier reflows the long comments and the SVG path data in these into
+# something much harder to read, and neither is code anyone edits often.
+src/settings/index.html
+src/hud/index.html
+app-icon.svg
+src-tauri/icons/tray.svg

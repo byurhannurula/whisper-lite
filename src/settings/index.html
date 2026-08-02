@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Lite</title>
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/settings/settings.css" />
+  </head>
+  <body>
+    <!--
+      An app shell, not a preferences dialog: persistent sidebar, a toolbar that stays put, and
+      a Home section that shows what the app has actually been doing. The window is titled
+      "Whisper Lite" rather than "Settings" for the same reason.
+    -->
+
+    <!-- Sidebar ---------------------------------------------------------- -->
+    <aside data-tauri-drag-region>
+      <!-- 44px of headroom clears the traffic lights, which overlay the content. -->
+      <nav role="tablist" aria-label="Sections">
+        <button role="tab" aria-selected="true" aria-controls="panel-home" id="tab-home">
+          <span class="tile" data-tint="home" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M3 10.4 12 3l9 7.4" /><path d="M5.6 9.2V20h12.8V9.2" /></svg>
+          </span>
+          <span>Home</span>
+        </button>
+
+        <button role="tab" aria-selected="false" aria-controls="panel-dictionary" id="tab-dictionary">
+          <!-- A type mark, not a book: a blue book tile is Apple Dictionary's icon and reads as
+               that app rather than as ours. -->
+          <span class="tile" data-tint="dictionary" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4.5 7.2V4.5h15v2.7M9.5 19.5h5M12 4.5v15" /></svg>
+          </span>
+          <span>Dictionary</span>
+        </button>
+
+        <button role="tab" aria-selected="false" aria-controls="panel-history" id="tab-history">
+          <span class="tile" data-tint="history" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6" /><path d="M12 7v5.2l3.4 2" /></svg>
+          </span>
+          <span>History</span>
+        </button>
+
+        <hr aria-hidden="true" />
+
+        <button role="tab" aria-selected="false" aria-controls="panel-config" id="tab-config">
+          <span class="tile" data-tint="config" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+              <circle cx="9" cy="7" r="2.1" fill="currentColor" />
+              <circle cx="15.5" cy="12" r="2.1" fill="currentColor" />
+              <circle cx="8" cy="17" r="2.1" fill="currentColor" />
+            </svg>
+          </span>
+          <span>Configuration</span>
+        </button>
+
+        <button role="tab" aria-selected="false" aria-controls="panel-sound" id="tab-sound">
+          <span class="tile" data-tint="sound" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M11 5 6.5 9H3.5v6h3L11 19V5Z" />
+              <path d="M15 9.5a3.5 3.5 0 0 1 0 5M17.8 6.8a7.2 7.2 0 0 1 0 10.4" />
+            </svg>
+          </span>
+          <span>Sound</span>
+        </button>
+
+        <button role="tab" aria-selected="false" aria-controls="panel-models" id="tab-models">
+          <span class="tile" data-tint="models" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="m12 3.2 8 4.4v8.8l-8 4.4-8-4.4V7.6l8-4.4Z" />
+              <path d="m12 12 8-4.4M12 12v8.8M12 12 4 7.6" />
+            </svg>
+          </span>
+          <span>Models</span>
+        </button>
+      </nav>
+
+      <!-- The brand block doubles as the About tab, the way the reference apps do. -->
+      <button class="brand" role="tab" aria-selected="false" aria-controls="panel-about" id="tab-about">
+        <img src="/icon.png" alt="" width="26" height="26" />
+        <span class="brand-name">Whisper Lite</span>
+        <span class="brand-version" id="brand-version">—</span>
+      </button>
+    </aside>
+
+    <!-- Content ---------------------------------------------------------- -->
+    <div class="shell">
+      <!-- Draggable, and home to the one control that is global rather than sectional. -->
+      <header class="topbar" data-tauri-drag-region>
+        <button class="icon-btn" id="sidebar-toggle" aria-label="Hide sidebar" title="Toggle sidebar (⌘B)">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4.5" width="18" height="15" rx="2.4" />
+            <path d="M9.5 4.5v15" />
+          </svg>
+        </button>
+
+        <label class="device" for="inputDevice">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3.5a2.8 2.8 0 0 1 2.8 2.8v5.4a2.8 2.8 0 1 1-5.6 0V6.3A2.8 2.8 0 0 1 12 3.5Z" />
+            <path d="M5.5 11.2a6.5 6.5 0 0 0 13 0M12 17.7V20.5" />
+          </svg>
+          <select id="inputDevice" aria-label="Microphone"></select>
+        </label>
+      </header>
+
+      <main>
+        <!-- Home ---------------------------------------------------------- -->
+        <section role="tabpanel" id="panel-home" aria-labelledby="tab-home">
+          <div class="page-head">
+            <h1>Home</h1>
+            <select id="stat-range" class="select--quiet" aria-label="Stats period">
+              <option value="1">Today</option>
+              <option value="7" selected>Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="0">All time</option>
+            </select>
+          </div>
+
+          <!-- Stats are derived from the local transcript history, so they exist only while
+               history is switched on. Saying so beats showing four zeroes. -->
+          <div class="card stats" id="stats">
+            <div class="stat">
+              <b id="stat-wpm">—</b>
+              <span>Average speed</span>
+            </div>
+            <div class="stat">
+              <b id="stat-words">—</b>
+              <span>Words</span>
+            </div>
+            <div class="stat">
+              <b id="stat-count">—</b>
+              <span>Dictations</span>
+            </div>
+            <div class="stat">
+              <b id="stat-saved">—</b>
+              <span>Time saved</span>
+            </div>
+          </div>
+
+          <div class="card chart-card" id="chart-card">
+            <div class="chart-head">
+              <span class="chart-title">Last 7 days</span>
+              <span class="chart-total" id="chart-total"></span>
+            </div>
+            <div class="chart" id="chart" role="img" aria-labelledby="chart-summary"></div>
+            <p class="visually-hidden" id="chart-summary"></p>
+          </div>
+
+          <p class="note stats-off" id="stats-off" hidden>
+            History is off, so there is nothing to measure. Turn it on in History to see your
+            stats — transcripts stay on this Mac either way.
+          </p>
+
+          <h2>Get started</h2>
+          <div class="card">
+            <button class="task" id="task-dictate">
+              <span class="task-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6" /><circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none" /></svg>
+              </span>
+              <span class="task-text">
+                Start dictating
+                <em>Hold the shortcut, talk, let go. Your words land in whatever you were typing into.</em>
+              </span>
+              <span class="task-badge" id="task-shortcut">—</span>
+            </button>
+
+            <button class="task" id="task-model">
+              <span class="task-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m12 3.2 8 4.4v8.8l-8 4.4-8-4.4V7.6l8-4.4Z" /><path d="m12 12 8-4.4M12 12v8.8M12 12 4 7.6" /></svg>
+              </span>
+              <span class="task-text">
+                Choose a model
+                <em id="task-model-note">Bigger models are more accurate; smaller ones are faster.</em>
+              </span>
+              <span class="task-chevron" aria-hidden="true">›</span>
+            </button>
+
+            <button class="task" id="task-words">
+              <span class="task-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" /></svg>
+              </span>
+              <span class="task-text">
+                Teach it your words
+                <em>Names, tools and acronyms it should always spell correctly.</em>
+              </span>
+              <span class="task-chevron" aria-hidden="true">›</span>
+            </button>
+
+            <button class="task" id="task-hud">
+              <span class="task-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.4" /><rect x="13" y="13.5" width="5.5" height="2.5" rx="1.25" fill="currentColor" stroke="none" /></svg>
+              </span>
+              <span class="task-text">
+                Place the indicator
+                <em>The pill that shows you are being heard. Nine positions, or off.</em>
+              </span>
+              <span class="task-chevron" aria-hidden="true">›</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- Configuration -------------------------------------------------- -->
+        <section role="tabpanel" id="panel-config" aria-labelledby="tab-config" hidden>
+          <h1>Configuration</h1>
+
+          <h2>Shortcut</h2>
+          <div class="card">
+            <div class="row row--stack">
+              <div class="row-head">
+                <span class="label">Dictation shortcut</span>
+                <button id="shortcut" class="recorder"><span class="recorder-keys"></span></button>
+              </div>
+              <p class="note" id="shortcut-note">Click, then press the keys you want to use.</p>
+              <div class="inline" style="margin-top: 8px">
+                <span class="note">Single key:</span>
+                <button class="btn" id="use-fn">🌐 Fn</button>
+                <button class="btn" id="use-capslock">⇪ Caps Lock</button>
+              </div>
+            </div>
+
+            <div class="row">
+              <label class="label" for="activation">Activation</label>
+              <select id="activation">
+                <option value="hold">Hold to talk</option>
+                <option value="toggle">Tap to toggle</option>
+                <option value="both">Hold, or tap to toggle</option>
+              </select>
+            </div>
+          </div>
+
+          <h2>Transcription</h2>
+          <div class="card">
+            <div class="row">
+              <label class="label" for="language">Language</label>
+              <select id="language">
+                <option value="auto">Auto-detect</option>
+                <option value="en">English</option>
+                <option value="tr">Turkish</option>
+                <option value="bg">Bulgarian</option>
+                <option value="de">German</option>
+                <option value="fr">French</option>
+                <option value="es">Spanish</option>
+                <option value="nl">Dutch</option>
+              </select>
+            </div>
+            <div class="row">
+              <span class="label">
+                Remove filler words
+                <em>Drops “um”, “uh” and “erm”</em>
+              </span>
+              <label class="switch">
+                <input type="checkbox" id="removeFillers" aria-label="Remove filler words" />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="row">
+              <span class="label">
+                Autocapitalise
+                <em>Capitalises the first word, and each new sentence</em>
+              </span>
+              <label class="switch">
+                <input type="checkbox" id="autocapitalize" aria-label="Autocapitalise" />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="row">
+              <span class="label">
+                Higher accuracy
+                <em>Beam search — slower, better on long sentences</em>
+              </span>
+              <label class="switch">
+                <input type="checkbox" id="accurate" aria-label="Higher accuracy" />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+          </div>
+
+          <h2>Recording indicator</h2>
+          <div class="card">
+            <div class="row">
+              <span class="label">
+                Show while speaking
+                <em>A small pill with a live waveform</em>
+              </span>
+              <label class="switch">
+                <input type="checkbox" id="hudVisible" aria-label="Show recording indicator while speaking" />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="row row--stack">
+              <span class="label" id="hud-label">Position on screen</span>
+              <div class="anchor-grid" role="radiogroup" aria-labelledby="hud-label"></div>
+            </div>
+          </div>
+
+          <h2>Application</h2>
+          <div class="card">
+            <div class="row">
+              <span class="label">Appearance</span>
+              <div class="segmented" role="radiogroup" aria-label="Theme">
+                <label><input type="radio" name="theme" value="system" /><span>System</span></label>
+                <label><input type="radio" name="theme" value="light" /><span>Light</span></label>
+                <label><input type="radio" name="theme" value="dark" /><span>Dark</span></label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">
+                Launch at login
+                <em>Whisper Lite waits in the menu bar</em>
+              </span>
+              <label class="switch">
+                <input type="checkbox" id="launchAtLogin" aria-label="Launch at login" />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="row">
+              <span class="label">
+                Show in Dock
+                <em>Off by default — this is a menu-bar app</em>
+              </span>
+              <label class="switch">
+                <input type="checkbox" id="showInDock" aria-label="Show in Dock" />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="row">
+              <span class="label">
+                Record on menu-bar click
+                <em>Left-click starts and stops dictation; the menu moves to right-click</em>
+              </span>
+              <label class="switch">
+                <input
+                  type="checkbox"
+                  id="menubarClickRecords"
+                  aria-label="Record on menu-bar click"
+                />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <!-- Sound ---------------------------------------------------------- -->
+        <section role="tabpanel" id="panel-sound" aria-labelledby="tab-sound" hidden>
+          <h1>Sound</h1>
+
+          <h2>Microphone</h2>
+          <div class="card">
+            <div class="row">
+              <label class="label" for="inputDeviceMirror">
+                Input device
+                <em>Also in the toolbar, so it is reachable from any section</em>
+              </label>
+              <select id="inputDeviceMirror"></select>
+            </div>
+          </div>
+
+          <h2>Sound effects</h2>
+          <div class="card">
+            <div class="row">
+              <span class="label">
+                Play sounds
+                <em>A short cue when recording starts and stops</em>
+              </span>
+              <label class="switch">
+                <input type="checkbox" id="playSounds" aria-label="Play sounds" />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="row" id="row-sound-start">
+              <label class="label" for="soundStart">Start sound</label>
+              <div class="inline">
+                <select id="soundStart"></select>
+                <button class="btn btn--quiet" id="previewStart" aria-label="Preview start sound">
+                  Play
+                </button>
+              </div>
+            </div>
+            <div class="row" id="row-sound-stop">
+              <label class="label" for="soundStop">Stop sound</label>
+              <div class="inline">
+                <select id="soundStop"></select>
+                <button class="btn btn--quiet" id="previewStop" aria-label="Preview stop sound">
+                  Play
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Dictionary ----------------------------------------------------- -->
+        <section role="tabpanel" id="panel-dictionary" aria-labelledby="tab-dictionary" hidden>
+          <h1>Dictionary</h1>
+
+          <div class="segmented sub" role="tablist" aria-label="Dictionary sections">
+            <label>
+              <input type="radio" name="dictview" value="words" checked /><span>Words</span>
+            </label>
+            <label><input type="radio" name="dictview" value="snippets" /><span>Snippets</span></label>
+          </div>
+
+          <!--
+            One input, two outcomes. Enter teaches the speller a word; Cmd+Enter turns the same
+            text into a trigger and asks what it should become. Two separate composers behind two
+            tabs made adding a replacement a four-step detour.
+          -->
+          <div class="term">
+            <input
+              id="term-input"
+              type="text"
+              placeholder="New word or replacement"
+              aria-label="New word or replacement"
+            />
+            <button class="term-action" id="term-add">
+              Add word <kbd aria-hidden="true">⏎</kbd>
+            </button>
+            <button class="term-action" id="term-replace">
+              Replace with… <kbd aria-hidden="true">⌘⏎</kbd>
+            </button>
+          </div>
+
+          <div class="term term--reply" id="replacement-row" hidden>
+            <input
+              id="replacement-input"
+              type="text"
+              placeholder="Replaced with"
+              aria-label="Replacement text"
+            />
+            <button class="term-action" id="replacement-save">
+              Save <kbd aria-hidden="true">⏎</kbd>
+            </button>
+          </div>
+
+          <div id="view-words">
+            <p class="note lead">
+              Words are given to the model before your audio, which makes it far likelier to spell
+              names, tools and acronyms correctly.
+            </p>
+            <div class="card" id="word-list"></div>
+          </div>
+
+          <div id="view-snippets" hidden>
+            <p class="note lead">
+              Say the trigger and it is replaced with whatever you saved — links, sign-offs,
+              boilerplate. The stuff you shouldn't have to say twice.
+            </p>
+            <div class="card" id="snippet-list"></div>
+          </div>
+        </section>
+
+        <!-- Models --------------------------------------------------------- -->
+        <section role="tabpanel" id="panel-models" aria-labelledby="tab-models" hidden>
+          <div class="page-head">
+            <h1>Models</h1>
+            <span class="note" id="model-summary"></span>
+          </div>
+          <p class="note lead">
+            Everything runs on this Mac — nothing is sent anywhere. Bigger is more accurate but
+            slower; compressed builds give up very little for a much smaller download.
+          </p>
+
+          <div class="segmented sub" role="radiogroup" aria-label="Filter models">
+            <label><input type="radio" name="modelfilter" value="all" checked /><span>All</span></label>
+            <label><input type="radio" name="modelfilter" value="installed" /><span>Downloaded</span></label>
+          </div>
+
+          <div id="model-list"></div>
+        </section>
+
+        <!-- History -------------------------------------------------------- -->
+        <section role="tabpanel" id="panel-history" aria-labelledby="tab-history" hidden>
+          <div class="page-head">
+            <h1>History</h1>
+            <button class="btn btn--quiet" id="history-clear">Clear all</button>
+          </div>
+
+          <div class="composer">
+            <input id="history-search" type="search" placeholder="Search transcripts" />
+          </div>
+
+          <div id="history-list"></div>
+
+          <h2>Retention</h2>
+          <div class="card">
+            <div class="row">
+              <span class="label">
+                Keep history
+                <em>Text only — audio is never saved. Your Home stats come from this.</em>
+              </span>
+              <label class="switch">
+                <input type="checkbox" id="historyEnabled" aria-label="Keep history" />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="row">
+              <label class="label" for="historyDays">Delete after</label>
+              <select id="historyDays">
+                <option value="7">7 days</option>
+                <option value="30">30 days</option>
+                <option value="90">90 days</option>
+                <option value="0">Keep until full</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <!-- About ---------------------------------------------------------- -->
+        <section role="tabpanel" id="panel-about" aria-labelledby="tab-about" hidden>
+          <h1>About</h1>
+
+          <div class="card">
+            <div class="row about-head">
+              <img src="/icon.png" alt="" width="56" height="56" />
+              <div class="label">
+                Whisper Lite
+                <em id="about-version">—</em>
+                <em>Hold a key, talk, let go, your words are in the box.</em>
+              </div>
+            </div>
+          </div>
+
+          <h2>Status</h2>
+          <div class="card">
+            <div class="row">
+              <span class="label">Model in use</span>
+              <span class="value" id="about-model">—</span>
+            </div>
+            <div class="row">
+              <span class="label">Shortcut</span>
+              <span class="value" id="about-shortcut">—</span>
+            </div>
+            <div class="row">
+              <span class="label">Models on disk</span>
+              <span class="value" id="about-disk">—</span>
+            </div>
+          </div>
+
+          <h2>Links</h2>
+          <div class="card">
+            <button class="link-row" data-url="https://github.com/byurhannurula/whisper-lite">
+              <span class="link-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"
+                  />
+                  <path d="M9 18c-4.51 2-5-2-7-2" />
+                </svg>
+              </span>
+              <span class="label">
+                Source on GitHub
+                <em>github.com/byurhannurula/whisper-lite</em>
+              </span>
+              <span class="link-arrow" aria-hidden="true">↗</span>
+            </button>
+
+            <button class="link-row" data-url="https://x.com/byurhannurula">
+              <!-- The X mark is a solid glyph, not a stroked one, so it opts out of the shared
+                   stroke styling rather than being approximated with two crossing lines. -->
+              <span class="link-icon link-icon--solid" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117l11.966 15.644Z"
+                  />
+                </svg>
+              </span>
+              <span class="label">
+                Byurhan Nurula on X
+                <em>x.com/byurhannurula</em>
+              </span>
+              <span class="link-arrow" aria-hidden="true">↗</span>
+            </button>
+
+            <button class="link-row" data-url="https://github.com/byurhannurula/whisper-lite/issues/new">
+              <span class="link-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16v.5" /></svg>
+              </span>
+              <span class="label">
+                Report a problem
+                <em>Attach the log file below — it helps a lot</em>
+              </span>
+              <span class="link-arrow" aria-hidden="true">↗</span>
+            </button>
+          </div>
+
+          <h2>Files</h2>
+          <div class="card">
+            <div class="row">
+              <span class="label">
+                Application data
+                <em id="about-data-dir">—</em>
+              </span>
+              <button class="btn" id="open-data">Show</button>
+            </div>
+            <div class="row">
+              <span class="label">
+                Log file
+                <em>Useful when reporting a problem</em>
+              </span>
+              <button class="btn" id="open-log">Show</button>
+            </div>
+          </div>
+
+          <h2>Privacy</h2>
+          <div class="card">
+            <div class="row row--stack">
+              <p class="note" style="margin: 0">
+                Everything runs on this Mac. Your audio is never uploaded, nothing is stored after
+                a transcription finishes, and there is no telemetry of any kind.
+              </p>
+            </div>
+          </div>
+
+          <p class="colophon">
+            Made by Byurhan Nurula · <span id="about-copyright">© 2026</span><br />
+            Speech recognition by
+            <button class="inline-link" data-url="https://github.com/ggerganov/whisper.cpp">whisper.cpp</button>,
+            models by OpenAI. Built with Tauri and Rust.
+          </p>
+        </section>
+      </main>
+    </div>
+
+    <!-- Native top-layer popover, so a scrolling pane can never clip it. -->
+    <div class="popover" id="toast" popover="manual" role="status" aria-live="polite">
+      <svg id="toast-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4L19 7" /></svg>
+      <span id="toast-text"></span>
+    </div>
+
+    <script type="module" src="/src/settings/settings.ts"></script>
+  </body>
+</html>

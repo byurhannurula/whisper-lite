@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Lite</title>
+    <link rel="stylesheet" href="/src/hud/hud.css" />
+  </head>
+  <body>
+    <!--
+      A status surface, not a control. aria-live announces state changes for screen reader users,
+      who otherwise get no signal that recording started.
+
+      Defaults to "listening" so the pill renders the moment the window is shown, even before the
+      first state event arrives. Window visibility is the source of truth, not CSS.
+
+      hud.css is deliberately standalone — no shared design tokens. This has to stay readable over
+      any application's window, so it does not follow the app theme.
+    -->
+    <div class="pill" id="pill" data-state="listening">
+      <span class="spinner" aria-hidden="true"></span>
+      <!-- The moving waveform is the recording indicator; there is no separate dot. -->
+      <div class="wave" id="wave" aria-hidden="true"></div>
+      <!-- The live region is the label alone, so only real state changes are announced. -->
+      <span class="label" id="label" role="status" aria-live="polite"></span>
+    </div>
+    <script type="module" src="/src/hud/hud.ts"></script>
+  </body>
+</html>

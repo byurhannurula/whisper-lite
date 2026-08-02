@@ -1,0 +1,8 @@
+# The `webgpu` feature of ort links against Dawn, which is emitted next to the binary as
+# libwebgpu_dawn.dylib but with no LC_RPATH pointing at it. Add @executable_path so the binary
+# finds it. DYLD_LIBRARY_PATH is not a workable alternative — macOS strips DYLD_* across some
+# process spawns, and `m0-bench all` re-spawns itself once per execution provider.
+#
+# Worth noting for the app: shipping the WebGPU EP means shipping this dylib in the bundle.
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,@executable_path"]

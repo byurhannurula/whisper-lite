@@ -1,0 +1,5 @@
+# Format and lint only what is being committed. See "lint-staged" in package.json.
+#
+# Deliberately not the full test suite: `cargo test` has to compile the Tauri crate, which is
+# far too slow to sit in front of every commit. CI and `pnpm release` run the real gates.
+npx lint-staged

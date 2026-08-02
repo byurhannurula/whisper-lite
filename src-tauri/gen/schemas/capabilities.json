@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Applies to every window. The HUD needs core:event to receive state updates; the settings window needs it for theme changes.","local":true,"windows":["*"],"permissions":["core:default"]}}

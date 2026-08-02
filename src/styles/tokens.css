@@ -1,0 +1,195 @@
+/*
+ * Design tokens.
+ *
+ * Calibrated against jotter's settings window so the two apps feel like siblings: grey window,
+ * white cards, hairline dividers, light-blue selection, iOS-style toggles.
+ *
+ * Colours are semantic only. Components never reference a raw hex value.
+ */
+
+:root {
+  /* Type — SF Pro on macOS via system-ui. */
+  --font-ui: system-ui, -apple-system, "Segoe UI Variable Text", sans-serif;
+  --font-rounded: ui-rounded, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px; /* AppKit control size. Do not raise this to 16px. */
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 19px;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.45;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-window: 12px;
+  --radius-pill: 999px;
+
+  --row-height: 52px;
+
+  /* Motion — 150-250ms, spring-like, never linear. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 150ms;
+  --duration-base: 220ms;
+}
+
+/* Light ------------------------------------------------------------------- */
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --accent: #007aff;
+  --accent-text: #fff;
+  /* Selection in the sidebar is a light blue wash with a blue glyph, not a solid blue bar. */
+  --accent-wash: #dbe4fb;
+
+  --window-bg: #f0f0f0;
+  --sidebar-bg: #f7f7f7;
+  --card: #ffffff;
+  --card-hover: #fafafa;
+  --control-track: #e9e9eb;
+  --control-raised: #ffffff;
+
+  --text-primary: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #9a9aa0;
+
+  --border: rgba(0, 0, 0, 0.07);
+  --divider: #e8e8e8;
+
+  --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.09);
+  --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.03);
+  --shadow-window: 0 22px 60px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.14);
+  --shadow-popover: 0 8px 28px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.1);
+
+  --danger: #d70015;
+  --success: #1c8a3c;
+}
+
+/* Dark -------------------------------------------------------------------- */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --accent: #0a84ff;
+  --accent-text: #fff;
+  --accent-wash: #2d3c58;
+
+  --window-bg: #232325;
+  --sidebar-bg: #1c1c1e;
+  --card: #2c2c2e;
+  --card-hover: #313134;
+  --control-track: #3a3a3c;
+  --control-raised: #48484a;
+
+  --text-primary: #f5f5f7;
+  --text-secondary: #a1a1a6;
+  --text-tertiary: #75757a;
+
+  --border: rgba(255, 255, 255, 0.09);
+  --divider: rgba(255, 255, 255, 0.08);
+
+  --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.2);
+  --shadow-window: 0 22px 60px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-popover: 0 8px 28px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
+
+  --danger: #ff453a;
+  --success: #30d158;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --accent: #0a84ff;
+    --accent-text: #fff;
+    --accent-wash: #2d3c58;
+
+    --window-bg: #232325;
+    --sidebar-bg: #1c1c1e;
+    --card: #2c2c2e;
+    --card-hover: #313134;
+    --control-track: #3a3a3c;
+    --control-raised: #48484a;
+
+    --text-primary: #f5f5f7;
+    --text-secondary: #a1a1a6;
+    --text-tertiary: #75757a;
+
+    --border: rgba(255, 255, 255, 0.09);
+    --divider: rgba(255, 255, 255, 0.08);
+
+    --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.2);
+    --shadow-window: 0 22px 60px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-popover: 0 8px 28px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.4);
+
+    --danger: #ff453a;
+    --success: #30d158;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  /* Chrome, not content: selecting labels is never useful and makes it feel like a web page. */
+  user-select: none;
+  cursor: default;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+/* Focus rings must survive translucency — a subtle ring vanishes against a card. */
+:focus-visible {
+  outline: 2.5px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

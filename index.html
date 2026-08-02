@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisper Lite</title>
+  </head>
+  <body>
+    <!--
+      M1 has no UI. The window exists only because Tauri needs one to keep the app process
+      alive; it is never shown. The HUD arrives in M3.
+    -->
+    <main id="app"></main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

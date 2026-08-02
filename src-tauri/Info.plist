@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Without this key macOS terminates the process the instant it touches the microphone.
+         The string is what the user sees in the permission prompt. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Whisper Lite records your voice only while you hold the dictation key, and transcribes it entirely on this Mac.</string>
+
+    <!-- Menu-bar app: no Dock icon, no app switcher entry. Matches the runtime
+         ActivationPolicy::Accessory so the behaviour is consistent before the app finishes
+         launching. -->
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>

@@ -1,0 +1,57 @@
+[package]
+name = "whisper-lite"
+version = "0.1.0"
+description = "Hold a key, talk, let go, your words are in the box."
+authors = ["Byurhan Nurula"]
+license = "AGPL-3.0-or-later"
+edition = "2021"
+
+[lib]
+# `_lib` suffix keeps the lib name distinct from the bin name, which otherwise collides on
+# Windows (rust-lang/cargo#8519). Same pattern as jotter.
+name = "whisper_lite_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `macos-private-api` is what allows a genuinely transparent window, which the HUD needs in
+# order to float rather than sit inside a grey rectangle. It rules out App Store distribution,
+# which was never the plan (PRD §9 — Developer ID direct + Homebrew).
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+# Audio capture. The stream is built at launch and only started on hotkey-down, so the mic
+# indicator is not permanently lit (PRD §12 hazard 1).
+cpal = "0.16"
+
+# Whisper via whisper.cpp with Metal. M0 measured Base at 294MB resident and a ~190ms tail,
+# which is why this is the default engine rather than Parakeet.
+whisper-rs = { version = "0.16", features = ["metal"] }
+
+# Text injection: clipboard write plus a synthetic paste.
+arboard = "3"
+enigo = "0.6"
+libc = "0.2.189"
+
+# Model downloads. rustls-tls avoids OpenSSL build friction across platforms — the same choice
+# jotter makes for its sync client.
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "rustls-tls",
+] }
+core-graphics = "0.25.0"
+core-foundation = "0.10.1"
+tauri-plugin-autostart = "2.5.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"

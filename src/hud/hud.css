@@ -1,0 +1,198 @@
+/*
+ * The HUD.
+ *
+ * Legibility is the whole job: this floats over arbitrary app content, so it uses a solid,
+ * high-contrast panel rather than a translucent one. An earlier version inherited a transparent
+ * background and was effectively invisible.
+ *
+ * Every colour here is self-contained rather than pulled from the shared token file. The HUD has
+ * to be readable over anything, so it deliberately does not follow the app's light/dark theme —
+ * and keeping it independent means a token rename can never make it disappear again.
+ */
+
+html,
+body {
+  background: transparent;
+  overflow: hidden;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  /* Never intercept clicks — the cursor must stay in whatever the user was typing into. */
+  pointer-events: none;
+  font-family:
+    ui-rounded,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Shorter than it was: with the dot and the timer gone there is less to hold, and a lower
+     pill sits more lightly over the user's content. */
+  height: 38px;
+  max-width: calc(100vw - 24px);
+  /*
+   * Horizontal padding must be at least the corner radius, or the outermost bars sit inside the
+   * rounded cap and visually collide with the curve — which reads as the waveform spilling out of
+   * the pill rather than sitting in it.
+   */
+  padding: 0 20px;
+  border-radius: 19px;
+
+  /*
+   * Nothing may render outside the pill, ever.
+   *
+   * The bars are a fixed width and cannot shrink, so any time the pill is narrower than they need
+   * — a clamped max-width, an unexpected window size — they used to spill out of the rounded end
+   * and draw on the desktop. Clipping makes that structurally impossible instead of relying on
+   * the arithmetic working out.
+   */
+  overflow: hidden;
+
+  /* Solid, not translucent. A dark panel with light content stays legible over any backdrop,
+     which is what macOS's own volume and brightness HUDs do. */
+  background: #1f1f22;
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  /* Restrained on purpose: this floats over light and dark content alike, and the previous
+     0 12px 32px drop read as a heavy smudge under the pill on a white background. */
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.28),
+    0 1px 3px rgba(0, 0, 0, 0.18);
+
+  color: #f5f5f7;
+  font-size: 13px;
+  animation: rise 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Spinner ------------------------------------------------------------------ */
+
+.spinner {
+  display: none;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  border-top-color: #f5f5f7;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+.pill[data-state="working"] .spinner {
+  display: block;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Waveform ----------------------------------------------------------------- */
+
+/* Driven by real input level, so it doubles as proof the microphone is working. Now that the
+   recording dot is gone, this movement is the sole "we are listening" signal. */
+.wave {
+  display: none;
+  align-items: center;
+  /* Bars are a fixed width, so the group sizes itself rather than stretching. 3px keeps the pill
+     narrower than it was even after the wider end padding. */
+  gap: 3px;
+  height: 20px;
+  /*
+   * An explicit width — 16 bars of 2px with 15 gaps of 3px — rather than letting the flex layout
+   * derive it. Stating the number the pill is sized from means the pill cannot end up narrower
+   * than its own contents, and `min-width: 0` lets it give ground instead of pushing out if it
+   * ever is.
+   */
+  flex: 0 1 auto;
+  width: 77px;
+  min-width: 0;
+}
+
+.pill[data-state="listening"] .wave {
+  display: flex;
+}
+
+/*
+ * Bars are a fixed height and scaled with a transform. Animating `height` forced a layout and
+ * paint of all 22 bars on every frame, which is what made the waveform feel laggy; `scaleY` is
+ * handled by the compositor and never touches layout.
+ *
+ * No CSS transition either — at 60fps the data itself is the animation, and a transition on top
+ * of it only adds latency.
+ */
+.wave i {
+  display: block;
+  /* Thin and evenly spaced — it reads as an instrument rather than a chart. Fixed rather than
+     flexible so the spacing stays even no matter how wide the pill gets. */
+  flex: 0 0 2px;
+  height: 20px;
+  border-radius: 1px;
+  /* White rather than an accent colour: on the solid dark pill this is the highest contrast
+     available, and at 2px wide the bars need every bit of it to stay legible. */
+  background: #fff;
+  transform: scaleY(0.15);
+  transform-origin: center;
+  will-change: transform;
+  /*
+   * The trail fades out towards the oldest sample. Opacity is per-bar but depends only on the
+   * bar's index, never on the level, so hud.ts sets it once at startup and the per-frame paint
+   * only ever touches `transform`.
+   */
+  opacity: var(--fade, 1);
+}
+
+.label {
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.label:empty {
+  display: none;
+}
+
+.pill[data-state="error"] {
+  background: #2a1d1e;
+  border-color: rgba(255, 69, 58, 0.42);
+}
+
+.pill[data-state="error"] .label {
+  color: #ff8a80;
+}
+
+/* Reduced motion: no rise, no spin. The bars still track the level, since that is information
+   rather than decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .pill,
+  .spinner {
+    animation: none;
+  }
+
+  .spinner {
+    border-top-color: rgba(255, 255, 255, 0.5);
+  }
+
+  .wave i {
+    transition: none;
+  }
+}

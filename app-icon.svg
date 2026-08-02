@@ -1,0 +1,36 @@
+<!--
+  Source of truth for the app icon. `app-icon.png` is rendered from this, and every size in
+  src-tauri/icons/ is generated from that PNG by `pnpm tauri icon`.
+
+  The mark is the HUD's own waveform, reduced to five bars. Using the same motif in the Dock, the
+  menu bar and the recording pill means the app is recognisable from any of the three. The
+  previous icon was a white microphone on a blue square, which is what every dictation app looks
+  like and what macOS itself uses for Dictation.
+
+  Full-bleed rounded square: Tauri's icon generator resizes without adding padding, so the artwork
+  has to be the finished Dock shape rather than a glyph on a canvas.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#3B86FF" />
+      <stop offset="0.55" stop-color="#2563EB" />
+      <stop offset="1" stop-color="#4C34D0" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="232" fill="url(#bg)" />
+
+  <!--
+    Bars are 92 wide on a 144 pitch, spanning 178-846 so the group is optically centred. Heights
+    are deliberately not symmetric — bar 4 is taller than bar 2 — because a symmetric set reads as
+    a mountain rather than as speech.
+  -->
+  <g fill="#fff">
+    <rect x="178" y="412" width="92" height="200" rx="46" />
+    <rect x="322" y="322" width="92" height="380" rx="46" />
+    <rect x="466" y="232" width="92" height="560" rx="46" />
+    <rect x="610" y="302" width="92" height="420" rx="46" />
+    <rect x="754" y="382" width="92" height="260" rx="46" />
+  </g>
+</svg>
