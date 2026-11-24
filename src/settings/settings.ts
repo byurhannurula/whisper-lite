@@ -1209,6 +1209,7 @@ async function initSounds() {
 /* History ------------------------------------------------------------------- */
 
 interface HistoryEntry {
+  id: number;
   at: number;
   text: string;
   duration: number;
@@ -1317,8 +1318,8 @@ function renderHistory() {
     remove.textContent = "×";
     remove.setAttribute("aria-label", "Delete this transcript");
     remove.addEventListener("click", async () => {
-      await invoke("delete_history_entry", { at: entry.at });
-      historyCache = historyCache.filter((e) => e.at !== entry.at);
+      await invoke("delete_history_entry", { id: entry.id });
+      historyCache = historyCache.filter((e) => e.id !== entry.id);
       renderHistory();
       renderHome();
     });

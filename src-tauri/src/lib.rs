@@ -26,7 +26,9 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 struct App {
     /// Serialises start/stop; see the SAFETY note on `audio::Recorder`.
-    recorder: Mutex<audio::Recorder>,
+    /// `None` when no input device could be opened. Startup must not depend on a microphone, or
+    /// a Mac Mini with nothing plugged in cannot even reach Settings.
+    recorder: Mutex<Option<audio::Recorder>>,
     /// The loaded model, or `None` when there is not one yet.
     ///
     /// Optional because a fresh install has no model on disk — nothing is bundled — and the app
@@ -35,6 +37,9 @@ struct App {
     /// Serialises model loads, so the startup warm-up and a first dictation cannot both pay the
     /// cost or interleave their writes to `engine`.
     engine_load: Mutex<()>,
+    /// When the engine last loaded or transcribed. `unload_when_idle` frees it after
+    /// `IDLE_UNLOAD` of quiet, since a loaded model holds 300MB-2GB for nothing between uses.
+    engine_used: Mutex<Instant>,
     settings: Mutex<Settings>,
     /// The shortcut currently registered, so it can be unregistered before rebinding.
     /// Rebinding without this leaves the old binding live and, on some macOS versions,
@@ -176,6 +181,11 @@ pub fn run() {
                 });
             }
 
+            {
+                let handle = handle.clone();
+                std::thread::spawn(move || unload_when_idle(handle));
+            }
+
             // Debug aid: WHISPER_LITE_HUD_TEST=1 shows the indicator shortly after launch so it
             // can be verified without a microphone or a menu click.
             if std::env::var("WHISPER_LITE_HUD_TEST").is_ok() {
@@ -254,8 +264,10 @@ fn shutdown(app: &AppHandle) {
 
     // Release the microphone so the indicator clears immediately rather than at process death.
     if state.recording.swap(false, Ordering::SeqCst) {
-        if let Ok(recorder) = state.recorder.lock() {
-            let _ = recorder.stop();
+        if let Ok(guard) = state.recorder.lock() {
+            if let Some(recorder) = guard.as_ref() {
+                let _ = recorder.stop();
+            }
         }
     }
 
@@ -325,7 +337,36 @@ fn load_model(state: &App, id: &str) -> Result<(), String> {
 
     ARM_TEARDOWN.call_once(suppress_ggml_teardown);
     *state.engine.lock().unwrap() = Some(loaded);
+    *state.engine_used.lock().unwrap() = Instant::now();
     Ok(())
+}
+
+/// Ten minutes covers a burst of dictation with pauses to read or think, so the reload cost
+/// (~300ms, hidden behind the speech by the warm-up in `begin`) is paid at most a few times an hour.
+const IDLE_UNLOAD: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Runs for the life of the app, freeing the model once it has sat unused for `IDLE_UNLOAD`.
+fn unload_when_idle(app: AppHandle) {
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(30));
+        let state = app.state::<App>();
+        if state.recording.load(Ordering::SeqCst) || state.busy.load(Ordering::SeqCst) {
+            continue;
+        }
+        if state.engine_used.lock().unwrap().elapsed() < IDLE_UNLOAD {
+            continue;
+        }
+        // Holding the load lock keeps this from racing a load that has just started.
+        let _guard = state.engine_load.lock().unwrap();
+        let unloaded = state.engine.lock().unwrap().take();
+        if let Some(engine) = unloaded {
+            println!(
+                "[whisper-lite] unloading '{}' after idle",
+                engine.model_id()
+            );
+            drop(engine);
+        }
+    }
 }
 
 /// Makes sure the configured model is loaded, loading it if not.
@@ -356,12 +397,15 @@ fn init() -> Result<App> {
     // The model is deliberately *not* loaded here. Startup must succeed on a machine that has
     // never downloaded one, because the Models UI is the only way to get one and it lives inside
     // the app. `ensure_engine` loads it on a background thread once the app is up.
-    let recorder = audio::Recorder::open(&settings.input_device)?;
+    let recorder = audio::Recorder::open(&settings.input_device)
+        .inspect_err(|e| eprintln!("[audio] no input device at startup: {e:#}"))
+        .ok();
 
     Ok(App {
         recorder: Mutex::new(recorder),
         engine: Mutex::new(None),
         engine_load: Mutex::new(()),
+        engine_used: Mutex::new(Instant::now()),
         settings: Mutex::new(settings),
         bound: Mutex::new(None),
         #[cfg(target_os = "macos")]
@@ -686,8 +730,8 @@ fn list_history(app: AppHandle) -> Vec<history::Entry> {
 }
 
 #[tauri::command]
-fn delete_history_entry(at: u64) -> Result<(), String> {
-    history::delete(at).map_err(|e| format!("{e:#}"))
+fn delete_history_entry(id: u64) -> Result<(), String> {
+    history::delete(id).map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -820,7 +864,7 @@ fn swap_input_device(app: &AppHandle, wanted: String) {
         }
 
         match audio::Recorder::open(&wanted) {
-            Ok(recorder) => *state.recorder.lock().unwrap() = recorder,
+            Ok(recorder) => *state.recorder.lock().unwrap() = Some(recorder),
             Err(e) => eprintln!("[audio] could not open '{wanted}': {e:#}"),
         }
     });
@@ -835,10 +879,9 @@ fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
     let state = app.state::<App>();
 
     let previous = state.settings.lock().unwrap().clone();
-    settings.save().map_err(|e| format!("{e:#}"))?;
 
-    // The toggle previously only persisted a field that nothing read, so it reported "Saved"
-    // while doing nothing at all.
+    // Before the save, so a failed change cannot leave settings.json claiming a launch-at-login
+    // state the system does not have.
     if previous.launch_at_login != settings.launch_at_login {
         use tauri_plugin_autostart::ManagerExt;
         let manager = app.autolaunch();
@@ -851,6 +894,8 @@ fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
             return Err(format!("could not change launch-at-login: {e}"));
         }
     }
+
+    settings.save().map_err(|e| format!("{e:#}"))?;
 
     let shortcut_changed = previous.shortcut != settings.shortcut;
     let hud_moved = previous.hud_position != settings.hud_position;
@@ -1193,15 +1238,24 @@ fn begin(app: &AppHandle) {
         return;
     }
 
-    if let Err(e) = state.recorder.lock().unwrap().start() {
-        eprintln!("[whisper-lite] could not start capture: {e:#}");
-        state.set_status("Microphone error");
-        hud_state(app, "error", Some("Microphone unavailable".into()));
-        // Without this the pill stays on screen for good: it is always-on-top and click-through,
-        // so there is nothing the user can do to dismiss it.
-        clear_hud_after(app, 3000);
-        return;
-    }
+    let started = match state.recorder.lock().unwrap().as_ref() {
+        Some(recorder) => recorder.start().map(|()| recorder.level_handle()),
+        None => Err(anyhow::anyhow!("no input device")),
+    };
+    let meter = match started {
+        Ok(meter) => meter,
+        Err(e) => {
+            eprintln!("[whisper-lite] could not start capture: {e:#}");
+            // A microphone plugged in after launch is only seen when the stream is rebuilt, so
+            // retry the open now and the next press can succeed.
+            if state.recorder.lock().unwrap().is_none() {
+                let wanted = state.settings.lock().unwrap().input_device.clone();
+                swap_input_device(app, wanted);
+            }
+            mic_error(app);
+            return;
+        }
+    };
 
     {
         let cfg = state.settings.lock().unwrap();
@@ -1212,6 +1266,17 @@ fn begin(app: &AppHandle) {
 
     state.recording.store(true, Ordering::SeqCst);
     println!("[whisper-lite] listening");
+
+    // Reload a model that was unloaded for idleness while the user is still talking, so the
+    // load overlaps the speech instead of adding to the wait after it.
+    if state.engine.lock().unwrap().is_none() {
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = ensure_engine(&handle) {
+                eprintln!("[whisper-lite] warm-up on record failed: {e}");
+            }
+        });
+    }
     state.set_status("Listening…");
     let position = state.settings.lock().unwrap().hud_position;
     hud::show_at(app, position, "listening", None);
@@ -1219,7 +1284,6 @@ fn begin(app: &AppHandle) {
     // Pump the meter to the HUD for as long as we are recording. Reading the level is a relaxed
     // atomic load, so this never touches the audio thread's path.
     let handle = app.clone();
-    let meter = state.recorder.lock().unwrap().level_handle();
     std::thread::spawn(move || {
         loop {
             if !handle.state::<App>().recording.load(Ordering::SeqCst) {
@@ -1231,6 +1295,14 @@ fn begin(app: &AppHandle) {
             std::thread::sleep(std::time::Duration::from_millis(16));
         }
     });
+}
+
+fn mic_error(app: &AppHandle) {
+    app.state::<App>().set_status("Microphone error");
+    hud_state(app, "error", Some("Microphone unavailable".into()));
+    // Without this the pill stays on screen for good: it is always-on-top and click-through,
+    // so there is nothing the user can do to dismiss it.
+    clear_hud_after(app, 3000);
 }
 
 fn finish(app: &AppHandle) {
@@ -1252,7 +1324,11 @@ fn finish(app: &AppHandle) {
         }
     }
 
-    let samples = match state.recorder.lock().unwrap().stop() {
+    let stopped = match state.recorder.lock().unwrap().as_ref() {
+        Some(recorder) => recorder.stop(),
+        None => Err(anyhow::anyhow!("no input device")),
+    };
+    let samples = match stopped {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[whisper-lite] could not stop capture: {e:#}");
@@ -1317,7 +1393,11 @@ fn finish(app: &AppHandle) {
                 match guard.as_ref() {
                     // `ensure_engine` just succeeded, so this is unreachable in practice.
                     None => Err(anyhow::anyhow!("no model loaded")),
-                    Some(eng) => eng.transcribe(&samples, &language, accurate, &dictionary),
+                    Some(eng) => {
+                        let text = eng.transcribe(&samples, &language, accurate, &dictionary);
+                        *state.engine_used.lock().unwrap() = Instant::now();
+                        text
+                    }
                 }
             }
         };

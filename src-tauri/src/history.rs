@@ -18,6 +18,11 @@ const MAX_ENTRIES: usize = 1000;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
+    /// Unique per entry, so deletes do not depend on `at`, which two entries in one second share.
+    /// Microsecond-scale, which keeps it below 2^53 so the webview reads it back exactly.
+    /// Files from before this field load as 0 and get one assigned in `load`.
+    #[serde(default)]
+    pub id: u64,
     /// Unix seconds.
     pub at: u64,
     pub text: String,
@@ -41,10 +46,36 @@ pub fn load() -> Vec<Entry> {
     if !p.exists() {
         return Vec::new();
     }
-    std::fs::read_to_string(&p)
+    let mut entries: Vec<Entry> = std::fs::read_to_string(&p)
         .ok()
-        .and_then(|raw| serde_json::from_str::<Vec<Entry>>(&raw).ok())
-        .unwrap_or_default()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    // Persist the migration at once: the settings window lists and later deletes by id, and both
+    // calls load from disk, so the ids must not change between them.
+    if assign_missing_ids(&mut entries) {
+        let _ = save(&entries);
+    }
+    entries
+}
+
+fn assign_missing_ids(entries: &mut [Entry]) -> bool {
+    let mut changed = false;
+    for (i, e) in entries.iter_mut().enumerate() {
+        if e.id == 0 {
+            e.id = e.at * 1_000_000 + i as u64 % 1_000_000;
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn next_id(entries: &[Entry]) -> u64 {
+    let micros = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_micros() as u64)
+        .unwrap_or(0);
+    let max = entries.iter().map(|e| e.id).max().unwrap_or(0);
+    micros.max(max + 1)
 }
 
 fn save(entries: &[Entry]) -> Result<()> {
@@ -77,9 +108,11 @@ pub fn prune(mut entries: Vec<Entry>, retention_days: u32) -> Vec<Entry> {
 
 pub fn append(text: &str, duration: f32, retention_days: u32) -> Result<()> {
     let mut entries = load();
+    let id = next_id(&entries);
     entries.insert(
         0,
         Entry {
+            id,
             at: now(),
             text: text.to_string(),
             duration,
@@ -88,8 +121,8 @@ pub fn append(text: &str, duration: f32, retention_days: u32) -> Result<()> {
     save(&prune(entries, retention_days))
 }
 
-pub fn delete(at: u64) -> Result<()> {
-    let entries: Vec<Entry> = load().into_iter().filter(|e| e.at != at).collect();
+pub fn delete(id: u64) -> Result<()> {
+    let entries: Vec<Entry> = load().into_iter().filter(|e| e.id != id).collect();
     save(&entries)
 }
 
@@ -107,6 +140,7 @@ mod tests {
 
     fn entry(at: u64, text: &str) -> Entry {
         Entry {
+            id: 0,
             at,
             text: text.into(),
             duration: 1.0,
@@ -133,6 +167,26 @@ mod tests {
     fn prune_sorts_newest_first() {
         let kept = prune(vec![entry(100, "older"), entry(200, "newer")], 0);
         assert_eq!(kept[0].text, "newer");
+    }
+
+    #[test]
+    fn same_second_entries_get_distinct_ids() {
+        let mut entries = vec![entry(500, "a"), entry(500, "b")];
+        assert!(assign_missing_ids(&mut entries));
+        assert_ne!(entries[0].id, entries[1].id);
+        assert!(!assign_missing_ids(&mut entries));
+    }
+
+    #[test]
+    fn next_id_is_above_every_existing_id() {
+        let mut far_future = entry(0, "x");
+        far_future.id = u64::MAX / 2;
+        assert!(next_id(&[far_future]) > u64::MAX / 2);
+    }
+
+    #[test]
+    fn ids_fit_in_a_js_number() {
+        assert!(next_id(&[]) < 1 << 53);
     }
 
     #[test]
