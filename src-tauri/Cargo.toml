@@ -1,6 +1,6 @@
 [package]
 name = "whisper-lite"
-version = "0.1.0"
+version = "0.1.1"
 description = "Hold a key, talk, let go, your words are in the box."
 authors = ["Byurhan Nurula"]
 license = "AGPL-3.0-or-later"
