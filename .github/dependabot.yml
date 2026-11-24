@@ -18,6 +18,10 @@ updates:
     ignore:
       - dependency-name: "@tauri-apps/*"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # Majors break the toolchain (TypeScript 7 is unsupported by typescript-eslint), so they
+      # are upgraded by hand.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: cargo
     directory: "/src-tauri"
@@ -25,7 +29,13 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     ignore:
-      - dependency-name: "tauri"
+      - dependency-name: "tauri*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # A 0.x minor is a breaking release under Cargo's rules (cpal 0.16 -> 0.18 renamed
+      # Device::name), so those come by hand too.
+      - dependency-name: "cpal"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "whisper-rs"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
     cooldown:
       default-days: 5
