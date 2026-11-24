@@ -41,17 +41,61 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
 
-      - name: Bump cask + push
+      # Writes the whole cask instead of patching version + sha256 in place, so the first release
+      # creates the file and later ones cannot drift from this template.
+      - name: Write cask + push
         if: steps.dmg.outputs.sha != ''
         env:
           VER: ${{ steps.dmg.outputs.ver }}
           SHA: ${{ steps.dmg.outputs.sha }}
+          ASSET: ${{ steps.dmg.outputs.asset }}
         run: |
-          f=tap/Casks/whisper-lite.rb
-          sed -i '' -E "s/^  version \".*\"/  version \"$VER\"/" "$f"
-          sed -i '' -E "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" "$f"
+          # GitHub rewrites spaces in asset names ("Whisper Lite_…" uploads as "Whisper.Lite_…"),
+          # so derive the URL from the real asset name rather than from productName.
+          file="$(printf '%s' "$ASSET" | sed "s/$VER/#{version}/g")"
+          mkdir -p tap/Casks
+          cat > tap/Casks/whisper-lite.rb <<EOF
+          cask "whisper-lite" do
+            # Written by tap.yml in byurhannurula/whisper-lite on each published release.
+            version "$VER"
+            sha256 "$SHA"
+
+            url "https://github.com/byurhannurula/whisper-lite/releases/download/v#{version}/$file"
+            name "Whisper Lite"
+            desc "Local, on-device dictation from the menu bar"
+            homepage "https://github.com/byurhannurula/whisper-lite"
+
+            depends_on macos: ">= :big_sur"
+
+            app "Whisper Lite.app"
+
+            # The build is not notarized, so Gatekeeper would block the first launch.
+            postflight do
+              system_command "/usr/bin/xattr",
+                             args: ["-dr", "com.apple.quarantine", "#{appdir}/Whisper Lite.app"]
+            end
+
+            uninstall quit: "com.byrhn.whisperlite"
+
+            zap trash: [
+              "~/Library/Application Support/whisper-lite",
+              "~/Library/Application Support/com.byrhn.whisperlite",
+              "~/Library/Caches/com.byrhn.whisperlite",
+              "~/Library/LaunchAgents/Whisper Lite.plist",
+              "~/Library/WebKit/com.byrhn.whisperlite",
+            ]
+
+            caveats <<~TXT
+              Whisper Lite needs Microphone and Accessibility permission.
+              The build is not code-signed, so after each upgrade macOS can forget the
+              Accessibility grant. Re-enable it in System Settings → Privacy & Security
+              → Accessibility if dictated text stops appearing.
+            TXT
+          end
+          EOF
           cd tap
-          if git diff --quiet; then
+          git add Casks/whisper-lite.rb
+          if git diff --cached --quiet; then
             echo "Cask already up to date."
             exit 0
           fi
