@@ -27,7 +27,7 @@ anyhow = "1"
 
 # Audio capture. The stream is built at launch and only started on hotkey-down, so the mic
 # indicator is not permanently lit (PRD §12 hazard 1).
-cpal = "0.16"
+cpal = "0.18"
 
 # Whisper via whisper.cpp with Metal. M0 measured Base at 294MB resident and a ~190ms tail,
 # which is why this is the default engine rather than Parakeet.
