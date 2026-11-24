@@ -29,7 +29,7 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     ignore:
-      - dependency-name: "tauri"
+      - dependency-name: "tauri*"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
       # A 0.x minor is a breaking release under Cargo's rules (cpal 0.16 -> 0.18 renamed
       # Device::name), so those come by hand too.
