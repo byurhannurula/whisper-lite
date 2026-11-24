@@ -30,15 +30,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit --audit-level=high
 
+  # Plain cargo-audit rather than rustsec/audit-check: that action needs checks/issues write
+  # access, which Dependabot PRs never get, and it failed there with no message. Exits non-zero
+  # on vulnerabilities only; unmaintained/unsound notices in Tauri's tree are printed, not fatal.
   cargo-audit:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      checks: write
     steps:
       - uses: actions/checkout@v7
-      - uses: rustsec/audit-check@v2
+      - uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: src-tauri
+          tool: cargo-audit
+      - run: cargo audit --file src-tauri/Cargo.lock
